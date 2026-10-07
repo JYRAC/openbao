@@ -1,0 +1,11 @@
+services:
+  - type: web
+    name: openbao
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    plan: free
+    envVars:
+      - key: BAO_ADDR
+        value: https://openbao.jyrac.stki.org
+      - key: STORAGE_PG_CONNECTION_URL
+        sync: false
