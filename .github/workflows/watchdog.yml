@@ -1,0 +1,38 @@
+name: openbao watchdog
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  watchdog:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check seal status
+        run: |
+          CODE=$(curl -s -o /dev/null -w "%{http_code}" --max-time 30 \
+            https://openbao.jyrac.stki.org/v1/sys/health) || CODE="000"
+          echo "code=$CODE"
+          case "$CODE" in
+            200|429)
+              echo "OpenBao is unsealed and healthy"
+              ;;
+            503)
+              echo "::error::OpenBao is SEALED (HTTP 503) - manual unseal required"
+              exit 1
+              ;;
+            501)
+              echo "::error::OpenBao is not initialized (HTTP 501)"
+              exit 1
+              ;;
+            000)
+              echo "::error::OpenBao is unreachable (timeout or connection failed)"
+              exit 1
+              ;;
+            *)
+              echo "::error::OpenBao returned unexpected HTTP $CODE"
+              exit 1
+              ;;
+          esac
