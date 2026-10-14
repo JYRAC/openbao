@@ -10,3 +10,10 @@ listener "tcp" {
 api_addr = "https://openbao.jyrac.stki.org"
 
 ui = true
+
+audit "file" "to-stdout" {
+  description = "Audit log to stdout"
+  options = {
+    file_path = "stdout"
+  }
+}
