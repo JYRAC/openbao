@@ -1,4 +1,4 @@
-FROM openbao/openbao:2.7.0
+FROM openbao/openbao:2.7.2
 COPY openbao.hcl /openbao/config/openbao.hcl
 COPY entrypoint.sh /entrypoint.sh
 USER root
