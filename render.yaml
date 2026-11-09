@@ -9,3 +9,21 @@ services:
         value: https://openbao.jyrac.stki.org
       - key: STORAGE_PG_CONNECTION_URL
         sync: false
+      # ---- NetBird（段階 1）。戻すときは、NETBIRD_ENABLED を消して、再デプロイ ----
+      - key: NETBIRD_ENABLED
+        value: "1"
+      - key: NB_HOSTNAME
+        value: openbao
+      # make-cert.sh の出力（証明書は公開情報、鍵は秘密）
+      - key: NB_TLS_CERT_B64
+        sync: false
+      - key: NB_TLS_KEY_B64
+        sync: false
+      # 初回の登録のときだけ入れて、ピア設定を復元できたら、消す
+      - key: NB_SETUP_KEY
+        sync: false
+      - key: NB_PRINT_CONFIG
+        sync: false
+      # 初回の登録のあと、ログの NB_CONFIG_B64=... の値を入れる
+      - key: NB_CONFIG_B64
+        sync: false
