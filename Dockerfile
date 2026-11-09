@@ -1,4 +1,4 @@
-FROM openbao/openbao:2.7.0
+FROM openbao/openbao:2.7.2
 
 ARG NETBIRD_VERSION=0.81.5
 # 任意（空でも動く。入れるほうが安全）: リリースページの netbird_${NETBIRD_VERSION}_checksums.txt にある、
