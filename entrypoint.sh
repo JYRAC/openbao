@@ -33,6 +33,32 @@ if [ "${NETBIRD_ENABLED:-0}" = "1" ]; then
   fi
 fi
 
+# Casdoor（SSO）への、サーバー側の通信（OIDC ログインの、発見文書、トークン、鍵）は、NetBird 経由で、Casdoor の内部口 A に出す。
+#   CASDOOR_NB_ADDR  内部口 A の、NetBird の IP:ポート（Casdoor の固定ピアの IP:8443。IPv4 のみ）。空なら、公開側のまま。
+# OpenBao は、発見文書に書かれた公開の URL（https://auth.jyrac.stki.org/...）に通信するので、URL は変えずに、
+#   1. nbtcp が、127.0.0.1:443 で受けて、NetBird の SOCKS5 経由で、内部口 A に、バイトをそのまま流す（TLS は終わらせない）。
+#   2. 内部口に、TLS 1.3 でつながり、証明書を検証できたと確認してから、/etc/hosts で、この名前を 127.0.0.1 に向ける。
+#      （届かないうちは、向けない。公開側のまま。届くまで、繰り返し確認する）
+#   3. OpenBao が、Casdoor と直接 TLS で話し、名前 auth.jyrac.stki.org と、システムの信頼する証明書
+#      （ルート入り。Dockerfile で追加）で、検証する。検証は、切らない。
+# ブラウザが開く認可の URL は、公開のまま（利用者の通信は、内部口を通さない。/etc/hosts は、このコンテナの中だけ）。
+if [ -n "$NB_PID" ] && [ -n "${CASDOOR_NB_ADDR:-}" ]; then
+  CASDOOR_HOST="${CASDOOR_HOSTNAME:-auth.jyrac.stki.org}"
+  nbtcp &
+  (
+    until NB_CHECK_SEC=20 nbtcp --check; do sleep 10; done
+    if grep -q "[[:space:]]$CASDOOR_HOST\$" /etc/hosts 2>/dev/null; then
+      :
+    elif echo "127.0.0.1 $CASDOOR_HOST" >> /etc/hosts 2>/dev/null; then
+      echo "NB: Casdoor の内部口に届くことを確認しました。OIDC の通信は、NetBird 経由の内部口を使います (CASDOOR_VIA=netbird)"
+    else
+      echo "NB: /etc/hosts に書けませんでした。OIDC の通信は、公開側のままです (CASDOOR_VIA=public)"
+    fi
+  ) &
+else
+  echo "NB: Casdoor へは、公開側でつなぎます (CASDOOR_VIA=public)"
+fi
+
 BAO_PID=""
 start_bao() {
   bao server -config=/openbao/config/openbao.hcl "$@" &

@@ -27,3 +27,7 @@ services:
       # 初回の登録のあと、ログの NB_CONFIG_B64=... の値を入れる
       - key: NB_CONFIG_B64
         sync: false
+      # Casdoor の内部口 A（固定ピアの NetBird の IP:8443）。OIDC ログインの、サーバー側の通信が、ここを通る。
+      # 空だと公開側につなぐ（C6 の前の、一時的な代替）。OIDC の設定（oidc_discovery_url など）は、変えない。
+      - key: CASDOOR_NB_ADDR
+        value: "100.125.23.8:8443"
