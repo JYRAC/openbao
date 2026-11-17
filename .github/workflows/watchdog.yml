@@ -1,38 +1,121 @@
 name: openbao watchdog
 
+# 二段の監視(通知だけ。再デプロイはしない: 再デプロイは OpenBao を封印するため)。
+#   1. keepalive: 公開側の /healthz に触れる(Render Free が眠らないようにする。OpenBao 本体には、届かない)
+#   2. health   : NetBird 経由で、OpenBao 本体の状態(封印・未初期化)と、NetBird 向け証明書の期限を見る
+# どちらかが失敗すると、ワークフローが失敗する(= GitHub の通知)。
+
 on:
   workflow_dispatch:
 
 permissions:
   contents: read
 
+env:
+  OPENBAO_NB_IP: "100.125.124.43"
+  OPENBAO_NB_NAME: "openbao.netbird.cloud"
+  OPENBAO_NB_PORT: "8210"
+
 jobs:
-  watchdog:
+  keepalive:
     runs-on: ubuntu-latest
     steps:
-      - name: Check seal status
+      - name: Public /healthz
         run: |
-          CODE=$(curl -s -o /dev/null -w "%{http_code}" --max-time 30 \
-            https://openbao.jyrac.stki.org/v1/sys/health) || CODE="000"
+          CODE=$(curl -s -o /dev/null -w "%{http_code}" --max-time 60 --retry 2 --retry-all-errors \
+            https://openbao.jyrac.stki.org/healthz) || CODE="000"
           echo "code=$CODE"
+          if [ "$CODE" != "200" ]; then
+            echo "::error::OpenBao の公開側 /healthz が 200 ではありません (HTTP $CODE)。コンテナが落ちているか、Render が眠っている可能性があります"
+            exit 1
+          fi
+
+  health:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Connect to NetBird
+        env:
+          NB_SETUP_KEY_ACTIONS: ${{ secrets.NETBIRD_SETUP_KEY_ACTIONS }}
+        run: |
+          set +e
+          NB_VER=0.81.5
+          fail() {
+            echo "::error::NetBird に接続できませんでした: $1"
+            sudo netbird down >/dev/null 2>&1
+            exit 1
+          }
+          if [ -z "${NB_SETUP_KEY_ACTIONS:-}" ]; then
+            fail "NETBIRD_SETUP_KEY_ACTIONS が未設定です"
+          fi
+          echo "::add-mask::$NB_SETUP_KEY_ACTIONS"
+
+          # 信頼する証明書(公開情報。各アプリの openbao/ca.crt と同じ、ルートだけ)
+          cat > /tmp/openbao-ca.crt <<'PEM'
+          -----BEGIN CERTIFICATE-----
+          MIIB5zCCAW2gAwIBAgIUW3xodfPKDDQr0wfLWGeU5dBAub0wCgYIKoZIzj0EAwMw
+          GDEWMBQGA1UEAwwNanlyYWMgUm9vdCBDQTAeFw0yNjExMTQxNTM5MjJaFw0zNjEx
+          MTExNTM5MjJaMBgxFjAUBgNVBAMMDWp5cmFjIFJvb3QgQ0EwdjAQBgcqhkjOPQIB
+          BgUrgQQAIgNiAAS1yQ3cQQSKdY662l7QWHEFMpR5P01V0o3hqLedFr/QKdor6cXz
+          /P0rLtAUPcEkEcFROz+sCuOKU7lCMZXZF6W0lWcJiizYNL8pjoFLTL4b5YleoeZ5
+          jdtDX+XsKS4NPtOjeDB2MBIGA1UdEwEB/wQIMAYBAf8CAQEwDgYDVR0PAQH/BAQD
+          AgEGMDEGA1UdHgEB/wQnMCWgIzAPgg1uZXRiaXJkLmNsb3VkMBCCDmp5cmFjLnN0
+          a2kub3JnMB0GA1UdDgQWBBT734stIBlBbHrGyFqly0xugmM4JDAKBggqhkjOPQQD
+          AwNoADBlAjEAg/CA4HRxBUqGZe2PCT4bo9D8kZUgWq7icxu7ejBJ7qY2w07G6OQ7
+          mS+HnExgbCfIAjB7TT/XPbE0fMpESsc0QsgDwVoK0b2E8vGHPb22ozJ5fkD+ml1E
+          aBagoOVVZsY4z/A=
+          -----END CERTIFICATE-----
+          PEM
+
+          curl -fsSL -o /tmp/netbird.tgz \
+            "https://github.com/netbirdio/netbird/releases/download/v${NB_VER}/netbird_${NB_VER}_linux_amd64.tar.gz" || fail "ダウンロード"
+          tar -xzf /tmp/netbird.tgz -C /tmp netbird || fail "展開"
+          sudo install -m 0755 /tmp/netbird /usr/local/bin/netbird
+          sudo netbird service install >/dev/null 2>&1
+          sudo netbird service start || fail "サービスの起動"
+
+          sudo netbird up --setup-key "$NB_SETUP_KEY_ACTIONS" \
+            --hostname "gh-${GITHUB_REPOSITORY##*/}-${GITHUB_RUN_ID}" --disable-dns \
+            > /tmp/nb-up.log 2>&1 || { tail -n 5 /tmp/nb-up.log; fail "netbird up"; }
+
+          # OpenBao に届くまで待つ(最大60秒)。応答の値は問わない。000 = 接続か、TLS の検証の失敗。
+          for i in $(seq 1 30); do
+            code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 5 --proto '=https' --tlsv1.3 \
+              --cacert /tmp/openbao-ca.crt --resolve "${OPENBAO_NB_NAME}:${OPENBAO_NB_PORT}:${OPENBAO_NB_IP}" \
+              "https://${OPENBAO_NB_NAME}:${OPENBAO_NB_PORT}/v1/sys/health")
+            if [ "$code" != "000" ]; then echo "NB_UP=1" >> "$GITHUB_ENV"; echo "NB: OpenBao に届きました (HTTP $code)"; exit 0; fi
+            sleep 2
+          done
+          fail "OpenBao に届きません(ポリシー actions→openbao:8210、OpenBao の起動、証明書を確認)"
+
+      - name: Check seal status and certificate
+        run: |
+          if [ "${NB_UP:-}" != "1" ]; then echo "::error::NetBird に接続していません"; exit 1; fi
+          CODE=$(curl -s -o /dev/null -w '%{http_code}' --max-time 30 --proto '=https' --tlsv1.3 \
+            --cacert /tmp/openbao-ca.crt --resolve "${OPENBAO_NB_NAME}:${OPENBAO_NB_PORT}:${OPENBAO_NB_IP}" \
+            "https://${OPENBAO_NB_NAME}:${OPENBAO_NB_PORT}/v1/sys/health") || CODE="000"
+          echo "code=$CODE"
+          RC=0
           case "$CODE" in
-            200|429)
-              echo "OpenBao is unsealed and healthy"
-              ;;
-            503)
-              echo "::error::OpenBao is SEALED (HTTP 503) - manual unseal required"
-              exit 1
-              ;;
-            501)
-              echo "::error::OpenBao is not initialized (HTTP 501)"
-              exit 1
-              ;;
-            000)
-              echo "::error::OpenBao is unreachable (timeout or connection failed)"
-              exit 1
-              ;;
-            *)
-              echo "::error::OpenBao returned unexpected HTTP $CODE"
-              exit 1
-              ;;
+            200|429) echo "OpenBao is unsealed and healthy" ;;
+            503) echo "::error::OpenBao is SEALED (HTTP 503) - manual unseal required"; RC=1 ;;
+            501) echo "::error::OpenBao is not initialized (HTTP 501)"; RC=1 ;;
+            000) echo "::error::OpenBao is unreachable over NetBird (timeout or TLS failure)"; RC=1 ;;
+            *)   echo "::error::OpenBao returned unexpected HTTP $CODE"; RC=1 ;;
           esac
+
+          # NetBird 向けの証明書の期限(年 1 回の、手動の差し替え)。60 日以内で警告、30 日以内で失敗(通知)にする。
+          END=$(echo | openssl s_client -connect "${OPENBAO_NB_IP}:${OPENBAO_NB_PORT}" -servername "${OPENBAO_NB_NAME}" \
+            -tls1_3 -CAfile /tmp/openbao-ca.crt -verify_hostname "${OPENBAO_NB_NAME}" -verify_return_error 2>/dev/null \
+            | openssl x509 -noout -enddate 2>/dev/null | sed 's/^notAfter=//')
+          if [ -z "$END" ]; then
+            echo "::error::証明書を読めません(検証に失敗した可能性)"; RC=1
+          else
+            DAYS=$(( ( $(date -d "$END" +%s) - $(date +%s) ) / 86400 ))
+            echo "OpenBao の NetBird 向け証明書: 期限 $END (あと ${DAYS} 日)"
+            if [ "$DAYS" -le 30 ]; then
+              echo "::error::証明書の期限まで ${DAYS} 日です。make-cert.sh で新しく作って、NB_TLS_CERT_B64 / NB_TLS_KEY_B64 を差し替えてください"; RC=1
+            elif [ "$DAYS" -le 60 ]; then
+              echo "::warning::証明書の期限まで ${DAYS} 日です(60 日以内)。差し替えの準備を"
+            fi
+          fi
+          exit "$RC"

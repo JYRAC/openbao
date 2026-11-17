@@ -4,6 +4,10 @@ set -eu
 # 保存先（Postgres）の接続URLを差し込む（従来どおり）
 sed -i "s|STORAGE_PG_CONNECTION_URL_PLACEHOLDER|${STORAGE_PG_CONNECTION_URL}|g" /openbao/config/openbao.hcl
 
+# 公開側(0.0.0.0:8200)の入口。OpenBao の起動を待たずに、すぐ受ける(Render が、ポートを見つけられるように)。
+# 既定は /healthz だけに応答する。OPENBAO_PUBLIC=open のときだけ、OpenBao 本体に流す(緊急用)。落ちたら、立て直す。
+( while :; do pubgate; sleep 2; done ) &
+
 # プロセスが、生きているか（終了済みで、まだ回収されていないもの = ゾンビ は、生きていないとみなす）
 alive() {
   [ -r "/proc/$1/status" ] && ! grep -q '^State:[[:space:]]*Z' "/proc/$1/status"

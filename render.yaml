@@ -31,3 +31,7 @@ services:
       # 空だと公開側につなぐ（C6 の前の、一時的な代替）。OIDC の設定（oidc_discovery_url など）は、変えない。
       - key: CASDOOR_NB_ADDR
         value: "100.125.23.8:8443"
+      # 公開側は、/healthz だけに応答する(C7)。緊急で、公開側を一時的に全面再開するときだけ、値を "open" にして再デプロイする。
+      # 使い終わったら、この行を消して(または値を空にして)再デプロイ。再デプロイで封印されるので、unseal が要る。
+      # - key: OPENBAO_PUBLIC
+      #   value: "open"

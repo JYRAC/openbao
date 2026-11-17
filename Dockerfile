@@ -7,6 +7,15 @@ COPY nbtcp.go ./
 RUN go mod init nbtcp && \
     go build -trimpath -ldflags="-s -w" -o /out/nbtcp .
 
+# 公開側(0.0.0.0:8200)の入口。既定では /healthz だけに応答する(標準ライブラリのみ)
+FROM golang:1.27-alpine AS pubgate-build
+ENV GOTOOLCHAIN=auto \
+    CGO_ENABLED=0
+WORKDIR /src
+COPY pubgate.go ./
+RUN go mod init pubgate && \
+    go build -trimpath -ldflags="-s -w" -o /out/pubgate .
+
 # OpenBao が、Casdoor の内部口の証明書を検証するための、ルート証明書だけを取り出す。
 #   ca.crt は、複数枚のバンドルでもよい。CA（CA:TRUE）のものだけを使う（旧い自己署名の証明書は、入れない）。
 #   ルートは、名前制約つき（netbird.cloud と jyrac.stki.org のみ）なので、他の名前には使えない。
@@ -46,6 +55,8 @@ COPY --from=trust-root /out/ /usr/local/share/ca-certificates/
 RUN update-ca-certificates
 COPY --from=nbtcp-build /out/nbtcp /usr/local/bin/nbtcp
 RUN chmod +x /usr/local/bin/nbtcp
+COPY --from=pubgate-build /out/pubgate /usr/local/bin/pubgate
+RUN chmod +x /usr/local/bin/pubgate
 
 # nbtcp --check が、Casdoor の内部口の証明書を検証するための、信頼する証明書(ルート入りのバンドル)。
 # 既定の場所が /etc/openbao/ca.crt。無いと、確認が通らず、/etc/hosts が書き換わらない(公開側のままになる)。
