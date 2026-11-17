@@ -55,7 +55,17 @@ if [ -n "$NB_PID" ] && [ -n "${CASDOOR_NB_ADDR:-}" ]; then
   CASDOOR_HOST="${CASDOOR_HOSTNAME:-auth.jyrac.stki.org}"
   nbtcp &
   (
-    until NB_CHECK_SEC=20 nbtcp --check; do sleep 10; done
+    while :; do
+      rc=0
+      NB_CHECK_SEC=20 nbtcp --check || rc=$?
+      [ "$rc" = 0 ] && break
+      if [ "$rc" = 2 ]; then
+        # 2 = 設定の誤り(CASDOOR_NB_ADDR の形、証明書のファイル)。繰り返しても、直らない。
+        echo "NB: nbtcp の設定に誤りがあります。OIDC の通信は、公開側のままです (CASDOOR_VIA=public)"
+        exit 0
+      fi
+      sleep 10
+    done
     if grep -q "[[:space:]]$CASDOOR_HOST\$" /etc/hosts 2>/dev/null; then
       :
     elif echo "127.0.0.1 $CASDOOR_HOST" >> /etc/hosts 2>/dev/null; then

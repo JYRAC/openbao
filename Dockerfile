@@ -47,6 +47,11 @@ RUN update-ca-certificates
 COPY --from=nbtcp-build /out/nbtcp /usr/local/bin/nbtcp
 RUN chmod +x /usr/local/bin/nbtcp
 
+# nbtcp --check が、Casdoor の内部口の証明書を検証するための、信頼する証明書(ルート入りのバンドル)。
+# 既定の場所が /etc/openbao/ca.crt。無いと、確認が通らず、/etc/hosts が書き換わらない(公開側のままになる)。
+COPY ca.crt /etc/openbao/ca.crt
+RUN sed -i 's/\r$//' /etc/openbao/ca.crt && test -s /etc/openbao/ca.crt
+
 COPY openbao.hcl /openbao/config/openbao.hcl
 COPY netbird.hcl /openbao/config/netbird.hcl
 COPY entrypoint.sh /entrypoint.sh
