@@ -24,6 +24,15 @@ if [ "${NETBIRD_ENABLED:-0}" = "1" ]; then
        printf '%s' "${NB_TLS_KEY_B64:-}" | base64 -d > /openbao/tls/server.key ) 2>/dev/null &&
      [ -s /openbao/tls/server.crt ] && [ -s /openbao/tls/server.key ]; then
     EXTRA_CONFIG="/openbao/config/netbird.hcl"
+    # NetBird 向けに、どの証明書を出すかを、ログに残す（秘密ではない）。
+    #   ・差し替えたあとに、ルート署名の証明書（issuer が jyrac Root CA）になったかを、確かめられる
+    #   ・フィンガープリントは、make-cert.sh が表示するものと、照合できる
+    #   ・期限が 30 日以内なら、警告を出す（年に 1 回の差し替えを、忘れないため）
+    if command -v openssl >/dev/null 2>&1; then
+      echo "NB_TLS issuer=$(openssl x509 -in /openbao/tls/server.crt -noout -issuer 2>/dev/null | sed 's/^issuer= *//') $(openssl x509 -in /openbao/tls/server.crt -noout -enddate 2>/dev/null) sha256=$(openssl x509 -in /openbao/tls/server.crt -noout -fingerprint -sha256 2>/dev/null | sed 's/^.*=//')"
+      openssl x509 -in /openbao/tls/server.crt -noout -checkend 2592000 >/dev/null 2>&1 \
+        || echo "NB: NetBird 向けの証明書の期限が、30 日以内です。make-cert.sh で新しく作って、NB_TLS_CERT_B64 と NB_TLS_KEY_B64 を差し替えてください"
+    fi
     # NetBird は、背景で起動する（NetBird の不調で、OpenBao 本体を止めないため）
     /netbird-start.sh &
     NB_PID=$!

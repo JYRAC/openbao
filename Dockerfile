@@ -31,7 +31,8 @@ USER root
 
 # NetBird クライアント。最後の `netbird version` は、Alpine（musl）で動くかの、ビルド時の確認。
 # 動かなければ、ビルドが失敗する（その場合は、公式の netbirdio/netbird イメージから、バイナリをコピーする形に変える）。
-RUN apk add --no-cache curl ca-certificates && \
+# openssl は、NetBird 向けの証明書の、発行者と期限を、起動のログに出すために使う（無くても動く）
+RUN apk add --no-cache curl ca-certificates openssl && \
     curl -fsSL -o /tmp/netbird.tar.gz \
       "https://github.com/netbirdio/netbird/releases/download/v${NETBIRD_VERSION}/netbird_${NETBIRD_VERSION}_linux_amd64.tar.gz" && \
     if [ -n "${NETBIRD_SHA256}" ]; then echo "${NETBIRD_SHA256}  /tmp/netbird.tar.gz" | sha256sum -c -; fi && \
