@@ -1,7 +1,7 @@
 {
   "$schema": "https://docs.renovatebot.com/renovate-schema.json",
   "extends": ["config:recommended"],
-  "enabledManagers": ["dockerfile"],
+  "enabledManagers": ["dockerfile", "custom.regex"],
   "dependencyDashboard": false,
   "timezone": "Asia/Tokyo",
   "minimumReleaseAge": "2 days",
@@ -9,7 +9,22 @@
   "prConcurrentLimit": 1,
   "automerge": false,
   "labels": ["renovate", "manual-update"],
+  "customManagers": [
+    {
+      "customType": "regex",
+      "managerFilePatterns": ["/(^|/)Dockerfile$/"],
+      "matchStrings": ["ARG NETBIRD_VERSION=(?<currentValue>\\S+)"],
+      "depNameTemplate": "netbirdio/netbird",
+      "datasourceTemplate": "github-releases",
+      "extractVersionTemplate": "^v(?<version>.*)$"
+    }
+  ],
   "packageRules": [
+    {
+      "matchDepNames": ["netbirdio/netbird"],
+      "matchUpdateTypes": ["minor", "major"],
+      "enabled": false
+    },
     {
       "matchUpdateTypes": ["patch"],
       "minimumReleaseAge": "1 day"
