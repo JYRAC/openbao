@@ -29,7 +29,7 @@ RUN mkdir -p /out /tmp/split && cd /tmp/split && \
     done && \
     test -n "$(ls /out)" && ls /out
 
-FROM openbao/openbao:2.7.0
+FROM openbao/openbao:2.7.3
 
 ARG NETBIRD_VERSION=0.81.5
 # 任意（空でも動く。入れるほうが安全）: リリースページの netbird_${NETBIRD_VERSION}_checksums.txt にある、
